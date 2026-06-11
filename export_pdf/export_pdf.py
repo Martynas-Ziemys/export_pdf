@@ -44,16 +44,15 @@ def depsgraph_refresh_pdf_list(scene, depsgraph):
         depsgraph_refresh_pdf_list.last_state = current_names
         depsgraph_refresh_pdf_list.last_count = current_count
         saved = {
-            i.o_name: (i.selected, i.export_frames) 
+            i.name: (i.selected, i.export_frames) 
             for i in settings.pdf_collection
         }
         settings.pdf_collection.clear()
         for name in sorted(current_names):
             item = settings.pdf_collection.add()
-            item.o_name = name
+            item.name = name
             if name in saved:
                 item.selected, item.export_frames = saved[name]
-
 
 class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.pdf"
@@ -70,19 +69,21 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
         default=False
     )
     colormanage_images: BoolProperty(
-        name="Apply color transform to images",
+        name="Apply Color Transforms to Images",
         description=(
-            "Image → Working space → color transform → display color space"
+            "image color space → working color space "
+            "→ color transform → display color space \n"
         ),
-        default=False
+        default=True
     )
     linear: BoolProperty(
         name="Only if Linear",
         description=(
-            "Only if you linear color space. "
-            "If EXRs are used for example."
+            "Only if image in linear color space. \n"
+            "If EXRs are used for example\n"
+            "(Any Linear or Working Space)"
         ),
-        default=False
+        default=True
     )
     animation: BoolProperty(
         name="Export Frames",
@@ -92,46 +93,74 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
     canvas_object_name: StringProperty(
         name="Canvas Object",
         description="Mesh object used to calculate viewport boundaries",
-        default=""
+        default="",
+        update = update_canvas_filename
     )
     open_files: BoolProperty(
         name="Open After Export",
         description="Open files after export",
         default=True
     )
-    filter_glob: StringProperty(default="*.pdf", options={'HIDDEN'})
-    filename_ext = ".pdf"  
 
+    filter_glob: StringProperty(default="*.pdf", options={'HIDDEN'})
+    filename_ext = ".pdf" 
+
+    def draw(self, context):
+        layout = self.layout
+        pdf_settings = context.scene.pdf_export_settings
+        col = layout.column()
+        col.label(text = "Canvas Object:")
+        col.prop_search(
+            self,
+            "canvas_object_name",
+            pdf_settings,
+            "pdf_collection",
+            icon='OBJECT_DATA',
+            text = ""
+        )
+        col.prop(self, "animation")
+        col.prop(self, "text_as_mesh")
+        col.prop(self, "open_files")
+        col.prop(self, "colormanage_images")
+        col = col.split(factor = 0.05)
+        col.label(text = "")
+        col.prop(self, "linear")
+        col.active = self.colormanage_images
+        
     def check(self, context):
-        ext =  ".pdf"
-        if not self.filepath.lower().endswith(ext):
-            self.filepath = os.path.splitext(self.filepath)[0] + ext
+        if not self.canvas_object_name:
+            return False
+        canvas_name = os.path.splitext(self.canvas_object_name)[0]
+        illegal_chars = r'\/?%*:|"<>'
+        for char in illegal_chars:
+            canvas_name = canvas_name.replace(char, "_")
+        current_dir = os.path.dirname(self.filepath)
+        new_filepath = os.path.join(current_dir, f"{canvas_name}.pdf")
+        if self.filepath != new_filepath:
+            self.filepath = new_filepath
             return True
         return False
 
     def invoke(self, context, event):
+        pdf_settings = context.scene.pdf_export_settings
+        refresh_pdf_objects_list(pdf_settings)
         self.canvas_object_name = ""
         o = context.object
-        if o:
-            if o.name.endswith(".pdf"):    
-                self.canvas_object_name = o.name
-                base_name = os.path.splitext(o.name)[0]
-                illegal_chars = r'\/?%*:|"<>'
-                for char in illegal_chars:
-                    base_name = base_name.replace(char, "_")
-                    ext = ".pdf"
-                self.filepath = os.path.join(
-                    os.path.dirname(self.filepath), 
-                    base_name + ext
-                )
+        if o and o.name.lower().endswith(".pdf"):    
+            self.canvas_object_name = o.name
+        else:
+            pdf_items = [item.name for item in pdf_settings.pdf_collection]
+            if pdf_items:
+                self.canvas_object_name = pdf_items[0]
             else:
                 self.report(
                     {"ERROR"}, 
-                    'Select PDF canvas object to define PDF bounds. '
-                    'Object\'s name must end in ".pdf".'
+                    'No objects ending in ".pdf" found in '
+                    'the scene to define canvas boundaries.'
                 )
                 return {'CANCELLED'}
         return super().invoke(context, event)
+
     def execute(self, context):
         pdf = None
         pdf_settings = context.scene.pdf_export_settings
@@ -145,7 +174,7 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
             for item in pdf_settings.pdf_collection:
                 if item.selected:
                     canvases.append(
-                        (bpy.data.objects.get(item.o_name), 
+                        (bpy.data.objects.get(item.name), 
                         item.export_frames)
                     )
         saved_paths = []
@@ -173,10 +202,10 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
                 context.scene.frame_set(f)
                 render_scale = 1000 / scale # because mm
                 depsgraph = context.evaluated_depsgraph_get()
-                eval_obj = canvas.evaluated_get(depsgraph)
+                eval_canvas = canvas.evaluated_get(depsgraph)
                 world_corners = [
-                    eval_obj.matrix_world @ mathutils.Vector(corner) 
-                    for corner in eval_obj.bound_box
+                    eval_canvas.matrix_world @ mathutils.Vector(corner) 
+                    for corner in eval_canvas.bound_box
                 ]
                 xs, ys, zs = zip(*world_corners)
                 min_x, max_x = min(xs), max(xs)
@@ -222,27 +251,26 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
                 append_pdf_frame(pdf, frame_data, bounds, render_scale)
             context.scene.frame_set(original_frame)
 
-        filename = canvas.name
-        for char in r'\/?%*:|"<>':
-            filename = filename.replace(char, "_")
-        if self.filepath:
-            filepath = bpy.path.abspath(self.filepath)
-        else:
-            filepath = os.path.join(
-                bpy.path.abspath(pdf_settings.export_path), filename
-            )
-        try:
-            pdf.output(filepath)
-            saved_paths.append(filepath)
-            if self.open_files:
-                open_file(filepath)
-        except Exception as e:
-            self.report(
-                {"ERROR"}, 
-                f"Failed to write {filepath}. "
-                "Is file locked or directory missing?"
-            )
-
+            filename = canvas.name
+            for char in r'\/?%*:|"<>':
+                filename = filename.replace(char, "_")
+            if self.filepath:
+                filepath = bpy.path.abspath(self.filepath)
+            else:
+                filepath = os.path.join(
+                    bpy.path.abspath(pdf_settings.export_path), filename
+                )
+            try:
+                pdf.output(filepath)
+                saved_paths.append(filepath)
+                if self.open_files:
+                    open_file(filepath)
+            except Exception as e:
+                self.report(
+                    {"ERROR"}, 
+                    f"Failed to write {filepath}. "
+                    "Is file locked or directory missing?"
+                )
         if saved_paths:
             if len(saved_paths) == 1:
                 self.report(
@@ -266,21 +294,7 @@ class OBJECT_OT_add_image_empty(bpy.types.Operator, ImportHelper):
         default=";".join(['*'+x for x in bpy.path.extensions_image]),
         options={'HIDDEN'},
     )
-    dimensions: FloatVectorProperty(
-        name="Dimensions",
-        description="Image dimensions in world space",
-        default=(2.0, 2.0),
-        size=2,
-        min=0.001,
-    )
-    fit_image: BoolProperty(
-        name="Fit Image",
-        description="Fit preserving aspect ratio or stretch",
-        default=True,
-    )
     def execute(self, context):
-        if not self.filepath:
-            return {'CANCELLED'}
         try:
             img = bpy.data.images.load(self.filepath)
         except Exception as e:
@@ -294,31 +308,7 @@ class OBJECT_OT_add_image_empty(bpy.types.Operator, ImportHelper):
         obj.data = img
         obj.lock_rotation[0] = True
         obj.lock_rotation[1] = True
-        img_w, img_h = img.size[0], img.size[1]
-        aspect_ratio = img_w / img_h
-        target_w, target_h = self.dimensions[0], self.dimensions[1]
-        if self.fit_image:
-            if (target_w / target_h) > aspect_ratio:
-                final_h = target_h
-                final_w = target_h * aspect_ratio
-            else:
-                final_w = target_w
-                final_h = target_w / aspect_ratio
-            obj.empty_display_size = max(final_w, final_h)
-            obj.scale = (1.0, 1.0, 1.0)
-        else:
-            obj.empty_display_size = 1.0
-            if img_w > img_h:
-                base_w = 1.0
-                base_h = img_h / img_w
-            else:
-                base_w = img_w / img_h
-                base_h = 1.0
-            obj.scale[0] = target_w / base_w
-            obj.scale[1] = target_h / base_h
-            obj.scale[2] = 1.0
         return {'FINISHED'}
-
 
 class AddPDFPagePreset(bpy.types.Operator):
     """Add a PDF page canvas object to the scene"""
@@ -500,7 +490,6 @@ class OBJECT_OT_set_pdf_properties(bpy.types.Operator):
                 area.tag_redraw()
         return {'FINISHED'}
 
-
 class MESH_OT_set_pdf_edge_attributes(bpy.types.Operator):
     bl_idname = "mesh.set_pdf_edge_attributes"
     bl_label = "Set Edge Attributes"
@@ -540,17 +529,15 @@ class MESH_OT_set_pdf_edge_attributes(bpy.types.Operator):
             bmesh.update_edit_mesh(me)
         return {'FINISHED'}
 
-
 class PDF_ObjectItem(bpy.types.PropertyGroup):
-    o_name: StringProperty(name="")
+    name: StringProperty(name="")
     selected: BoolProperty(name="", default=False)
     export_frames: BoolProperty(name="", default=False)
-
 
 class RENDER_UL_pdf_objects(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, 
                   icon, active_data, active_propname, index):
-        o = bpy.data.objects.get(item.o_name)
+        o = bpy.data.objects.get(item.name)
         row = layout.row()
         left_side = row.split(factor=0.1)
         left_side.prop(item, "selected", text="")
@@ -558,27 +545,10 @@ class RENDER_UL_pdf_objects(bpy.types.UIList):
         if o:
             content_split.label(text=o.name, icon='OBJECT_DATA')
         else:
-            content_split.label(text=f"{item.o_name} (Missing)", icon='ERROR')
+            content_split.label(text=f"{item.name} (Missing)", icon='ERROR')
         right_side = content_split.column()
         right_side.alignment = 'RIGHT'
         right_side.prop(item, "export_frames", text="")
-
-
-def refresh_pdf_objects_list(settings):
-    settings.pdf_collection.clear()
-    for o in bpy.data.objects:
-        if o.name.lower().endswith(".pdf"):
-            item = settings.pdf_collection.add()
-            item.o_name = o.name
-
-def update_export_path(self, context):
-    if self.export_path:
-        abs_path = bpy.path.abspath(self.export_path)
-        clean_path = os.path.normpath(abs_path)
-        if not clean_path.endswith(os.sep):
-            clean_path += os.sep
-        if self.export_path != clean_path:
-            self.export_path = clean_path
 
 class PDFExportSettings(bpy.types.PropertyGroup):
     page_size: EnumProperty(
@@ -603,23 +573,21 @@ class PDFExportSettings(bpy.types.PropertyGroup):
         default=False
     )
     colormanage_images: BoolProperty(
-        name="Apply color transform to images",
+        name="Apply Color Transforms to Images",
         description=(
-            "For use with linear color images(EXR). \n"
             "image color space → working color space "
             "→ color transform → display color space \n"
-            "YOU PROBABLY DON'T NEED THIS ;)"
         ),
-        default=False
+        default=True
     )
     linear: BoolProperty(
         name="Only if Linear",
         description=(
             "Only if image in linear color space. \n"
             "If EXRs are used for example\n"
-            "Any Linear or Working Space"
+            "(Any Linear or Working Space)"
         ),
-        default=False
+        default=True
     )
     orientation: EnumProperty(
         name="Orientation",
@@ -639,21 +607,6 @@ class PDFExportSettings(bpy.types.PropertyGroup):
         default=30,
         step=5,
         update=scale_increment,
-    )
-
-    fit_image: BoolProperty(
-        name="Fit Image",
-        description="Fit preserving aspect ratio or stretch",
-        default=True,
-    )
-
-    image_dimensions: FloatVectorProperty(
-        name="Dimensions",
-        description="Image dimensions in world space",
-        default=(2.0, 2.0),
-        subtype='XYZ_LENGTH',
-        size=2,
-        min=0.001,
     )
 
     open_files: BoolProperty(
@@ -694,12 +647,12 @@ class PDFExportSettings(bpy.types.PropertyGroup):
         default=0
     )
 
-class pdf_panel:
+class PDF_Panel:
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "output"
 
-class RENDER_PT_pdf_export(pdf_panel, bpy.types.Panel):
+class RENDER_PT_pdf_export(PDF_Panel, bpy.types.Panel):
     bl_label = "PDF Export"
     bl_id_name = "RENDER_PT_pdf_export"
 
@@ -739,9 +692,7 @@ class RENDER_PT_pdf_export(pdf_panel, bpy.types.Panel):
         op.colormanage_images = pdf_settings.colormanage_images
         op.linear = pdf_settings.linear
     
-
-
-class RENDER_PT_pdf_page_templates(pdf_panel, bpy.types.Panel):
+class RENDER_PT_pdf_page_templates(PDF_Panel, bpy.types.Panel):
     bl_parent_id = "RENDER_PT_pdf_export"
     bl_idname = "RENDER_PT_pdf_page_templates"
     bl_label = "Page Templates"
@@ -766,21 +717,14 @@ class RENDER_PT_pdf_page_templates(pdf_panel, bpy.types.Panel):
         op.orientation = pdf_settings.orientation
         op.export_scale = pdf_settings.export_scale
 
-
-
-class RENDER_PT_pdf_image(pdf_panel, bpy.types.Panel):
+class RENDER_PT_pdf_image(PDF_Panel, bpy.types.Panel):
     bl_parent_id = "RENDER_PT_pdf_export"
     bl_idname = "RENDER_PT_pdf_image"
     bl_label = "Add PDF Compatible image"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
-        pdf_settings = context.scene.pdf_export_settings
         layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-        layout.prop(pdf_settings, "image_dimensions")
-        layout.prop(pdf_settings, "fit_image")
         layout = layout.split(factor=0.1)
         layout.label(text="")
         op = layout.operator(
@@ -788,10 +732,8 @@ class RENDER_PT_pdf_image(pdf_panel, bpy.types.Panel):
             text="Add Compatible Image",
             icon = "FILE_IMAGE"
             )
-        op.dimensions = pdf_settings.image_dimensions
-        op.fit_image = pdf_settings.fit_image
 
-class RENDER_PT_pdf_custom_properties(pdf_panel, bpy.types.Panel):
+class RENDER_PT_pdf_custom_properties(PDF_Panel, bpy.types.Panel):
     bl_parent_id = "RENDER_PT_pdf_export"
     bl_idname = "RENDER_PT_pdf_custom_properties"
     bl_label = "Set Stroke Properties/Attributes"
@@ -823,7 +765,6 @@ class RENDER_PT_pdf_custom_properties(pdf_panel, bpy.types.Panel):
             )    
         op.stroke_width = pdf_settings.stroke_width
         op.stroke_color = pdf_settings.stroke_color        
-
 
 class MESH_OT_refresh_pdf_list(bpy.types.Operator):
     bl_idname = "mesh.refresh_pdf_list"

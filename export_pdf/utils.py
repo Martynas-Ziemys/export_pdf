@@ -5,6 +5,36 @@ import PyOpenColorIO as OCIO
 import subprocess
 import sys
 
+
+def update_export_path(self, context):
+    if self.export_path:
+        abs_path = bpy.path.abspath(self.export_path)
+        clean_path = os.path.normpath(abs_path)
+        if not clean_path.endswith(os.sep):
+            clean_path += os.sep
+        if self.export_path != clean_path:
+            self.export_path = clean_path
+
+
+def refresh_pdf_objects_list(settings):
+    settings.pdf_collection.clear()
+    for o in bpy.data.objects:
+        if o.name.lower().endswith(".pdf"):
+            item = settings.pdf_collection.add()
+            item.name = o.name
+
+
+def update_canvas_filename(self, context):
+    if not self.canvas_object_name:
+        return
+    base_name = os.path.splitext(self.canvas_object_name)[0]
+    illegal_chars = r'\/?%*:|"<>'
+    for char in illegal_chars:
+        base_name = base_name.replace(char, "_")
+    current_dir = os.path.dirname(self.filepath)
+    self.filepath = os.path.join(current_dir, base_name + ".pdf")
+
+
 def open_file(path):
     if sys.platform.startswith("win"):
         os.startfile(path)
@@ -82,7 +112,6 @@ def get_material_color(mat):
             return list(Vector(colors[0]).lerp(Vector(colors[1]), f))
         return default
     return get_node_color(n)
-
 
 class OCIOColorConverter:
     def __init__(self, scene=None):
