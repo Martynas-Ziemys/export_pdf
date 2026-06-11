@@ -1,0 +1,8 @@
+# Ignore Python runtime compilation caches
+**/__pycache__/
+*.pyc
+
+# Ignore local developer configurations
+.git
+.vscode/
+.misc/

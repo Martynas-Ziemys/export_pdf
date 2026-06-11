@@ -1,0 +1,26 @@
+schema_version = "1.0.0"
+id = "export_pdf"
+name = "Export to PDF"
+version = "1.0.0"
+tagline = "Export drawings(flat on XY plane) to PDF"
+maintainer = "Martynas Žiemys"
+type = "add-on"
+tags = ["Import-Export"]
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later",]
+# platforms = ["windows-x64", "macos-arm64", "linux-x64"]
+
+wheels = [
+    "./wheels/fpdf2-2.8.7-py3-none-any.whl",
+    "./wheels/fonttools-4.63.0-py3-none-any.whl",
+    "./wheels/defusedxml-0.7.1-py2.py3-none-any.whl"
+]
+
+[permissions]
+files = "Import/export from/to disk"
+
+[build]
+paths_exclude_pattern = [
+   "__pycache__/",
+   "/.git/",
+]
