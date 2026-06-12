@@ -1,5 +1,5 @@
 import bpy
-from mathutils import Vector
+from mathutils import Color, Vector
 import os
 import PyOpenColorIO as OCIO
 import subprocess
@@ -89,7 +89,12 @@ def get_material_color(mat):
         if node.type in ['EMISSION', 'BSDF_DIFFUSE']:
             return col_or_link_rgb(node.inputs[0]) 
         if node.type == 'BSDF_TRANSPARENT':
-            return list(col_or_link_rgb(node.inputs[0]))[:3] + [0.0]
+            col = col_or_link_rgb(node.inputs[0])
+            # This doesn't matter, PDF mixing 
+            # nonlinear colors is wrong anyway
+            # just give transparency that can have some color
+            luminance = col[0]/3 + col[1]/3 + col[2]/3
+            return list(col[:3]) + [1.0 - luminance]
         if node.type == 'BSDF_PRINCIPLED':
             a = node.inputs['Alpha'].default_value
             if node.inputs['Emission Strength'].default_value >= 1:
@@ -102,15 +107,20 @@ def get_material_color(mat):
                 return default
             f = node.inputs[0].default_value
             colors = []
-            for s in range(1, 3): 
+            for s in range(1, 3):
                 socket = node.inputs[s]
                 if socket.is_linked:
-                    linked_node = socket.links[0].from_node
-                    colors.append(get_node_color(linked_node))
+                    colors.append(get_node_color(socket.links[0].from_node))
                 else:
                     colors.append([0.0, 0.0, 0.0, 1.0])
-            return list(Vector(colors[0]).lerp(Vector(colors[1]), f))
-        return default
+            c1, c2 = colors[0], colors[1]
+            mixed_rgb = [
+                c1[0] * (1.0 - f) + c2[0] * f,
+                c1[1] * (1.0 - f) + c2[1] * f,
+                c1[2] * (1.0 - f) + c2[2] * f
+            ]
+            alpha = (c1[3] * (1.0 - f)) + (c2[3] * f)
+            return mixed_rgb + [max(0.0, min(1.0, alpha))]
     return get_node_color(n)
 
 class OCIOColorConverter:

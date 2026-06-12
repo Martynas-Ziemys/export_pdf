@@ -65,7 +65,6 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 ## TO DO
 * UI text and descriptions
 * Thorough tests, make a test scene
-* Get material color improvements (fix color mix)
 * Packed font support 
 * Attribute/Property Preview
 * Finish documentation, new screenshots/GIFs
