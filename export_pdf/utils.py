@@ -151,13 +151,11 @@ class OCIOColorConverter:
                 for v in (*transformed_rgb, linear_color[3])
             )
 
-
-def extract_paths_from_edges(edges_set):
+def paths_from_edges(edges_set):
     adj = {}
     for edge in edges_set:
-        v0, v1 = edge.verts
-        adj.setdefault(v0, []).append((v1, edge))
-        adj.setdefault(v1, []).append((v0, edge))
+        for v in edge.verts:
+            adj.setdefault(v, []).append(edge)
     visited = set()
     paths = []
     def walk(start_vert, start_edge):
@@ -166,29 +164,27 @@ def extract_paths_from_edges(edges_set):
         curr_e = start_edge
         while curr_e and curr_e not in visited:
             visited.add(curr_e)
-            v0, v1 = curr_e.verts
-            nxt_v = v1 if curr_v == v0 else v0
+            nxt_v = curr_e.other_vert(curr_v)
             path.append(nxt_v)
             curr_v = nxt_v
-            candidates = [e for _, e in adj.get(curr_v, []) if e not in visited]
+            candidates = [e for e in adj.get(curr_v, []) if e not in visited]
             curr_e = candidates[0] if len(candidates) == 1 else None
         return path
     for edge in edges_set:
         if edge in visited:
             continue
         v0, v1 = edge.verts
-        v0_adj = adj.get(v0, [])
-        v1_adj = adj.get(v1, [])
-        if len(v0_adj) != 2 or len(v1_adj) != 2:
-            start_v = v0 if len(v0_adj) != 2 else v1
+        v0_len = len(adj.get(v0, []))
+        v1_len = len(adj.get(v1, []))
+        if v0_len != 2 or v1_len != 2:
+            start_v = v0 if v0_len != 2 else v1
             path = walk(start_v, edge)
             paths.append((path, False))
     for edge in edges_set:
         if edge in visited:
             continue
-        v0, v1 = edge.verts
-        path = walk(v0, edge)
+        path = walk(edge.verts[0], edge)
         if len(path) > 2 and path[0] == path[-1]:
             path.pop()
-            paths.append((path, True))
+            paths.append((path, True))     
     return paths

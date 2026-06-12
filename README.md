@@ -63,7 +63,7 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 * Exported images will ignore scene color management
 
 ## TO DO
-* UI tet and descriptions
+* UI text and descriptions
 * Thorough tests, make a test scene
 * Get material color improvements (fix color mix)
 * Packed font support 

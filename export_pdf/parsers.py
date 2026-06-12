@@ -54,11 +54,11 @@ def parse_mesh(o, bounds, col_convert, matrix):
     raw_stroke_color = o.get("stroke_color", (0, 0, 0, 1))
     stroke_width = o.get("stroke_width", 0.01)
     stroke_color_rgba = col_convert.to_rgba_255(raw_stroke_color)
-    world_coords = {v: matrix @ v.co for v in bm.verts}
+    bm.transform(matrix)
     transformed_coords = {
         v: (
-            world_coords[v].x - bounds["min_x"],
-            bounds["max_y"] - world_coords[v].y
+            v.co.x - bounds["min_x"],
+            bounds["max_y"] - v.co.y
         )
         for v in bm.verts
     }
@@ -72,7 +72,7 @@ def parse_mesh(o, bounds, col_convert, matrix):
                 raw_mat_color = get_material_color(
                     o.material_slots[mat_idx].material
                 )
-        face_color_rgba = col_convert.to_rgba_255(raw_mat_color) 
+        face_color_rgba = col_convert.to_rgba_255(raw_mat_color)
         unvisited = set(faces)
         while unvisited:
             seed = unvisited.pop()
@@ -90,20 +90,14 @@ def parse_mesh(o, bounds, col_convert, matrix):
                             island_faces.add(linked_face)
                             stack.append(linked_face)
             island_verts = {v for face in island_faces for v in face.verts}
-            z = sum(world_coords[v].z for v in island_verts) / len(island_verts)
+            z = sum(v.co.z for v in island_verts) / len(island_verts)
             fill_boundary_edges = set()
-            for face in island_faces:
-                for edge in face.edges:
-                    if edge.is_boundary:
-                        fill_boundary_edges.add(edge)
-                        continue
-                    island_links = 0
-                    for linked_face in edge.link_faces:
-                        if linked_face in island_faces:
-                            island_links += 1
-                    if island_links == 1:
-                        fill_boundary_edges.add(edge)
-            loops = extract_paths_from_edges(fill_boundary_edges)
+            island_edges = {e for f in island_faces for e in f.edges}
+            for edge in island_edges:
+                if (edge.is_boundary 
+                    or any(lf not in island_faces for lf in edge.link_faces)):
+                    fill_boundary_edges.add(edge)
+            loops = paths_from_edges(fill_boundary_edges)
             if loops:
                 mesh_primitives.append({
                     "type": "fill_mesh",
@@ -115,32 +109,26 @@ def parse_mesh(o, bounds, col_convert, matrix):
                     ]
                 })
     stroke_groups = {}
-    done_edges = set()
     if stroke_width > 0.0:
         boundary_edges = {edge for edge in bm.edges if edge.is_boundary}
         if boundary_edges:
             stroke_groups[(stroke_width, stroke_color_rgba)] = boundary_edges
-    loose_edges = [edge for edge in bm.edges if edge.is_wire]
     additional_strokes = bm.edges.layers.float.get("pdf_stroke")
     additional_colors = bm.edges.layers.float_color.get("pdf_stroke_color")
-    if loose_edges or additional_strokes:
-        if additional_strokes:
-            for edge in bm.edges:
-                w = edge[additional_strokes]
-                if w > 0.0:
-                    c = (
-                        col_convert.to_rgba_255(edge[additional_colors]) 
-                        if additional_colors else stroke_color_rgba
-                    )
-                    stroke_groups.setdefault((w, c), set()).add(edge)
-                    done_edges.add(edge)
-        for edge in loose_edges:
-            if edge not in done_edges and stroke_width > 0.0:
-                key = (stroke_width, stroke_color_rgba)
-                stroke_groups.setdefault(key, set()).add(edge)
+    for edge in bm.edges:
+        if additional_strokes and edge[additional_strokes] > 0.0:
+            w = edge[additional_strokes]
+            c = (col_convert.to_rgba_255(edge[additional_colors]) 
+                if additional_colors else stroke_color_rgba
+            )
+            stroke_groups.setdefault((w, c), set()).add(edge)
+        elif edge.is_wire and stroke_width > 0.0:
+            stroke_groups.setdefault(
+                (stroke_width, stroke_color_rgba), set()
+            ).add(edge)
     for (w, c), edges in stroke_groups.items():
-        for path, is_closed in extract_paths_from_edges(edges):
-            z = max(world_coords[v].z for v in path)
+        for path, is_closed in paths_from_edges(edges):
+            z = max(v.co.z for v in path)
             mesh_primitives.append({
                 "type": "stroke_mesh",
                 "z_depth": z + 0.0001,
@@ -150,7 +138,6 @@ def parse_mesh(o, bounds, col_convert, matrix):
                 "closed": is_closed
             })
     bm.free()
-    o.to_mesh_clear()
     return mesh_primitives
 
 def parse_curve(o, bounds, col_convert, matrix):
