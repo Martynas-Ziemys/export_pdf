@@ -529,6 +529,20 @@ class MESH_OT_set_pdf_edge_attributes(bpy.types.Operator):
             bmesh.update_edit_mesh(me)
         return {'FINISHED'}
 
+class VIEW3D_OT_toggle_pdf_preview(bpy.types.Operator):
+    bl_idname = "view3d.toggle_pdf_preview"
+    bl_label = "Toggle PDF Stroke Preview"
+    def execute(self, context):
+        pdf_draw_handler = getattr(bpy.types.WindowManager, "pdf_draw_handler", None)
+        if pdf_draw_handler is None:
+            pdf_draw_handler = bpy.types.SpaceView3D.draw_handler_add(PDF_overlay_hadler, (context,), 'WINDOW', 'POST_VIEW')
+            bpy.types.WindowManager.pdf_draw_handler = pdf_draw_handler
+        else:
+            bpy.types.SpaceView3D.draw_handler_remove(pdf_draw_handler, 'WINDOW')
+            bpy.types.WindowManager.pdf_draw_handler = None
+        context.area.tag_redraw()
+        return {'FINISHED'}
+
 class PDF_ObjectItem(bpy.types.PropertyGroup):
     name: StringProperty(name="")
     selected: BoolProperty(name="", default=False)
@@ -660,6 +674,12 @@ class RENDER_PT_pdf_export(PDF_Panel, bpy.types.Panel):
         pdf_settings = context.scene.pdf_export_settings
         layout = self.layout
         layout.use_property_split = False
+        col = layout.column()
+        col.operator(
+            "view3d.toggle_pdf_preview", 
+            text="Toggle Viewport Stroke Preview",
+            icon = "RESTRICT_VIEW_OFF"
+            )
         header = layout.row().split(factor=0.5) # 0.1 if refresh operator
         #header.operator("mesh.refresh_pdf_list", text="", icon='FILE_REFRESH')
         header.label(text="Canvas Object")
@@ -764,7 +784,12 @@ class RENDER_PT_pdf_custom_properties(PDF_Panel, bpy.types.Panel):
             icon = "MESH_DATA"
             )    
         op.stroke_width = pdf_settings.stroke_width
-        op.stroke_color = pdf_settings.stroke_color        
+        op.stroke_color = pdf_settings.stroke_color  
+        col = layout.column()
+        col.separator() 
+        col=col.split(factor=0.1)
+        col.label(text="")
+             
 
 class MESH_OT_refresh_pdf_list(bpy.types.Operator):
     bl_idname = "mesh.refresh_pdf_list"
@@ -784,6 +809,7 @@ classes = (
     MESH_OT_set_pdf_edge_attributes,
     OBJECT_OT_add_image_empty,
     EXPORT_OT_to_pdf, 
+    VIEW3D_OT_toggle_pdf_preview,
     RENDER_PT_pdf_export,
     RENDER_PT_pdf_page_templates,
     RENDER_PT_pdf_image,
@@ -800,6 +826,10 @@ def register():
     bpy.app.handlers.depsgraph_update_post.append(depsgraph_refresh_pdf_list)
 
 def unregister():
+    pdf_draw_handler = getattr(bpy.types.WindowManager, "pdf_draw_handler", None)
+    if pdf_draw_handler is not None:
+        bpy.types.SpaceView3D.draw_handler_remove(pdf_draw_handler, 'WINDOW')
+        bpy.types.WindowManager.pdf_draw_handler = None 
     bpy.app.handlers.depsgraph_update_post.remove(depsgraph_refresh_pdf_list)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     del bpy.types.Scene.pdf_export_settings

@@ -4,6 +4,103 @@ import os
 import PyOpenColorIO as OCIO
 import subprocess
 import sys
+import gpu
+import bmesh
+from gpu_extras.batch import batch_for_shader
+
+
+def edge_rect_stroke(p1, p2, width, offset):
+    dir_vec = (p2 - p1).normalized()
+    normal = (p2 - p1).cross(Vector((0, 0, 1)))
+    if normal.length < 0.001:
+        normal = dir_vec.cross(Vector((0, 1, 0)))
+    normal.normalize()
+    offset_vec = normal * (width / 2.0)
+    up_offset = Vector((0, 0, offset))
+    v0 = p1 + offset_vec + up_offset
+    v1 = p1 - offset_vec + up_offset
+    v2 = p2 + offset_vec + up_offset
+    v3 = p2 - offset_vec + up_offset
+    return [v0, v1, v2, v3]
+
+
+def PDF_overlay_hadler(context):
+    col_convert = OCIOColorConverter(scene=context.scene)
+    depsgraph = context.evaluated_depsgraph_get()
+    gpu.state.blend_set('ALPHA')
+    gpu.state.depth_test_set('LESS_EQUAL')
+    shader_tris = gpu.shader.from_builtin('UNIFORM_COLOR')
+    shader_lines = gpu.shader.from_builtin('UNIFORM_COLOR')
+    for instance in depsgraph.object_instances:
+        obj = instance.object
+        orig_obj = instance.object.original
+        if orig_obj.type not in {'MESH', 'CURVE'}:
+            continue
+        if orig_obj.type == 'CURVE' and obj.type == 'MESH':
+            continue
+        if orig_obj.type == 'CURVE':
+            mesh = obj.to_mesh()
+        else:
+            mesh = obj.data
+        matrix = instance.matrix_world
+        stroke_width_prop = orig_obj.get("stroke_width", 0.01)
+        stroke_color_prop = orig_obj.get("stroke_color", (0.0, 0.0, 0.0, 1.0))
+        stroke_color = col_convert.to_rgba(stroke_color_prop)
+        is_edit_mesh = (orig_obj.type == 'MESH' and orig_obj.mode == 'EDIT')
+        if is_edit_mesh:
+            bm = bmesh.from_edit_mesh(orig_obj.data)
+        else:
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+        pdf_stroke_layer = None
+        pdf_color_layer = None
+        if orig_obj.type == 'MESH':
+            pdf_stroke_layer = bm.edges.layers.float.get("pdf_stroke")
+            pdf_color_layer = bm.edges.layers.float_color.get("pdf_stroke_color")
+        batches = {}
+        line_batches = {}
+        for edge in bm.edges:
+            is_boundary = edge.is_boundary or edge.is_wire
+            has_attr = False
+            width = stroke_width_prop
+            color = stroke_color
+            if pdf_stroke_layer:
+                val = edge[pdf_stroke_layer]
+                if val > 0.0:
+                    has_attr = True
+                    width = val
+            if not has_attr and (not is_boundary or stroke_width_prop <= 0.0):
+                continue
+            if has_attr and pdf_color_layer:
+                color = col_convert.to_rgba(edge[pdf_color_layer])
+            p1 = matrix @ edge.verts[0].co
+            p2 = matrix @ edge.verts[1].co
+            if color not in line_batches:
+                line_batches[color] = []
+            line_batches[color].extend([p1, p2])
+            rect = edge_rect_stroke(p1, p2, width, 0.001)
+            bucket_key = (color, width)
+            if bucket_key not in batches:
+                batches[bucket_key] = []
+            batches[bucket_key].extend(rect)
+        shader_tris.bind()
+        for (color, width), coords in batches.items():
+            indices = []
+            for i in range(0, len(coords), 4):
+                indices.extend([(i, i+1, i+2), (i+1, i+3, i+2)])
+            batch = batch_for_shader(shader_tris, 'TRIS', {"pos": coords}, indices=indices)
+            shader_tris.uniform_float("color", color)
+            batch.draw(shader_tris)
+        gpu.state.line_width_set(1.0)
+        shader_lines.bind()
+        for color, l_coords in line_batches.items():
+            line_batch = batch_for_shader(shader_lines, 'LINES', {"pos": l_coords})
+            shader_lines.uniform_float("color", color)
+            line_batch.draw(shader_lines)
+        if not is_edit_mesh:
+            bm.free()
+    gpu.state.blend_set('NONE')
+    gpu.state.depth_test_set('NONE')
 
 
 def update_export_path(self, context):
@@ -160,6 +257,10 @@ class OCIOColorConverter:
                 round(min(max(v, 0.0), 1.0) * 255)
                 for v in (*transformed_rgb, linear_color[3])
             )
+    def to_rgba(self, linear_color):
+            rgb = linear_color[:3]
+            transformed_rgb = self.cpu_processor.applyRGB(rgb)
+            return tuple((*transformed_rgb, linear_color[3]))
 
 def paths_from_edges(edges_set):
     adj = {}

@@ -27,11 +27,10 @@ Install as any other extension - download [export_pdf-1.0.0.zip](export_pdf-1.0.
     * Principled BSDF(Alpha is used for transparency, if Emission Strength ≥ 1, Emission Color is used)
     * Diffuse BSDF
     * Color
-    * Emission
+    * Emission 
+    * Transparent BSDF
     * Any of those mixed with Transparent BSDF
 * Export multiple PDFs with frames as pages at a time:
-
-![UI settings fro multiple files with frames as pages](assets/Multiple_PDFs_with_frames_as_pages.jpg "Multiple files with frames as pages")
 
 ## Usage
 A mesh object is used to define the canvas for a PDF page. Any mesh objects with ".pdf" at the end of the name will be considered canvas objects. The original dimensions of a canvas object bounding box will be used as the size of the page while the scale of the object will be used as scale factor. 
@@ -66,11 +65,13 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 * UI text and descriptions
 * Thorough tests, make a test scene
 * Packed font support 
-* Attribute/Property Preview
 * Finish documentation, new screenshots/GIFs
 
 ## Ideas I am considering 
-* Curve attributes
 * Options for stroke joint types
 * Scene unit support
-* Dashed lines
+* Switching images from Empty to Mesh type so they are color managed in the viewport
+
+## AI Use 
+
+AI was used when coding, however all generated code bits were very thoroughly reviewed considered and corrected/rewritten manually. So if you see something weird in the code you can rest assured that's definitely my fault, not some LLM hallucination ;) . 
