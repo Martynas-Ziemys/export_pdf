@@ -205,6 +205,11 @@ def append_text(pdf, primitive, scale):
             else:
                 pdf.text(final_x, y_baseline, line_text)
     pdf.set_stretching(100)
+    if font_path and os.path.exists(font_path):
+        try:
+            os.remove(font_path)
+        except OSError:
+            pass
 
 def append_image(pdf, primitive, scale):
     filepath = primitive["filepath"]
@@ -222,11 +227,6 @@ def append_image(pdf, primitive, scale):
             pdf.image(
                 filepath, x=img_x, y=img_y, w=img_w, h=img_h
             )
-    if filepath and os.path.exists(filepath):
-        try:
-            os.remove(filepath)
-        except OSError:
-            pass
     
 
 def append_pdf_frame(pdf, frame_data, bounds, scale=50):

@@ -243,7 +243,25 @@ def parse_curve(o, bounds, col_convert, matrix):
     return curve_primitives
 
 def parse_text(o, bounds, col_convert, matrix):
+    temp_file = False
     text_data = o.data
+    if text_data.font.packed_file:
+        original_path = text_data.font.filepath
+        temp_dir = os.path.join(tempfile.gettempdir(), "pdf_export")
+        ext = "ttf"
+        temp_filepath = os.path.join(temp_dir, f"{text_data.font.name}.{ext}")
+        text_data.font.filepath = temp_filepath
+        text_data.font.unpack(method='WRITE_ORIGINAL')
+        temp_file = True
+        text_data.font.pack()
+        text_data.font.filepath = original_path 
+    if text_data.font.name == "Bfont Regular":
+        font_path = os.path.join(os.path.dirname(__file__), "Bfont.ttf")
+    else:
+        font_path = (
+            bpy.path.abspath(text_data.font.filepath) 
+            if text_data.font.filepath else ""
+        )
     raw_text = text_data.body
     local_corners = [mathutils.Vector(corner) for corner in o.bound_box]
     loc_min_x = min(v.x for v in local_corners)
@@ -264,15 +282,6 @@ def parse_text(o, bounds, col_convert, matrix):
     if o.material_slots and o.material_slots[0].material:
         raw_mat_color = get_material_color(o.material_slots[0].material)
     color_rgba_255 = col_convert.to_rgba_255(raw_mat_color)
-    blender_font = text_data.font
-    font_name = blender_font.name
-    if font_name == "Bfont Regular":
-        font_path = os.path.join(os.path.dirname(__file__), "Bfont.ttf")
-    else:
-        font_path = (
-            bpy.path.abspath(blender_font.filepath) 
-            if blender_font.filepath else ""
-        )
     return [{
         "type": "text",
         "z_depth": z,
@@ -282,16 +291,16 @@ def parse_text(o, bounds, col_convert, matrix):
         "w": w_local,
         "h": h_local,
         "rotation_degrees": rotation_degrees,
-        "font_name": font_name,
+        "font_name": text_data.font.name,
         "font_path": font_path,
         "color_rgba_255": color_rgba_255,
         "font_size": text_data.size,
-        "lines": len(raw_text.strip('\n').splitlines())
+        "lines": len(raw_text.strip('\n').splitlines()),
     }]
 
 def parse_empty_image(o, bounds, matrix, colormanage_images, linear_only):
     img = o.data
-    temp_dir = tempfile.gettempdir()
+    temp_dir = os.path.join(tempfile.gettempdir(), "pdf_export")
     is_exr = img.filepath.endswith((".exr", ".EXR"))
     is_linear = ("linear") in img.colorspace_settings.name.lower() 
     print(img.colorspace_settings.name.lower())

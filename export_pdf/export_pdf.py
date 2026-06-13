@@ -5,6 +5,8 @@ from bpy.props import *
 import bmesh
 import fpdf 
 import os
+import tempfile
+import shutil
 
 from .utils import *
 from .parsers import *
@@ -283,6 +285,11 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
                     {"INFO"}, 
                     f"{len(saved_paths)} PDF files saved to {export_dir}"
                 )
+        temp_dir = os.path.join(tempfile.gettempdir(), "pdf_export")
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
         return {'FINISHED'}
         
 
