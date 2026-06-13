@@ -786,10 +786,7 @@ class RENDER_PT_pdf_custom_properties(PDF_Panel, bpy.types.Panel):
         op.stroke_width = pdf_settings.stroke_width
         op.stroke_color = pdf_settings.stroke_color  
         col = layout.column()
-        col.separator() 
-        col=col.split(factor=0.1)
-        col.label(text="")
-             
+        col.separator()             
 
 class MESH_OT_refresh_pdf_list(bpy.types.Operator):
     bl_idname = "mesh.refresh_pdf_list"
