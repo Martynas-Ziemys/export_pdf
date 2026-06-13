@@ -179,14 +179,6 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
                     )
         saved_paths = []
         for canvas, animation in canvases:
-            scale = max(abs(s) for s in canvas.scale)
-            if scale < 0.001:
-                self.report(
-                    {"ERROR"}, 
-                    "Canvas scale cannot be zero. "
-                    f"Skipping {canvas.name}."
-                )
-                continue
             pdf = fpdf.FPDF(unit="mm")
             pdf.set_display_mode(zoom="fullpage", layout="single")
             pdf.set_producer(
@@ -200,6 +192,14 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
             original_frame = context.scene.frame_current
             for f in frames:
                 context.scene.frame_set(f)
+                scale = max(abs(s) for s in canvas.scale)
+                if scale < 0.001:
+                    self.report(
+                        {"ERROR"}, 
+                        "Canvas scale cannot be zero. "
+                        f"Skipping {canvas.name}."
+                    )
+                    continue
                 render_scale = 1000 / scale # because mm
                 depsgraph = context.evaluated_depsgraph_get()
                 eval_canvas = canvas.evaluated_get(depsgraph)
