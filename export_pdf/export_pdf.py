@@ -13,17 +13,35 @@ from .parsers import *
 from .writers import *
 
 
+@bpy.app.handlers.persistent
+def clear_cache_on_load(*args):
+    cache = getattr(PDF_overlay_hadler, "cache", None)
+    if cache is not None:
+        cache.clear()
+    if hasattr(PDF_export_app_handler, "last_state"):
+        PDF_export_app_handler.last_state = set()
+    if hasattr(PDF_export_app_handler, "last_count"):
+        PDF_export_app_handler.last_count = 0
+
 @persistent
-def depsgraph_refresh_pdf_list(scene, depsgraph):
-    if not hasattr(depsgraph_refresh_pdf_list, "last_state"):
-        depsgraph_refresh_pdf_list.last_state = set()
-    if not hasattr(depsgraph_refresh_pdf_list, "last_count"):
-        depsgraph_refresh_pdf_list.last_count = 0
+def PDF_export_app_handler(scene, depsgraph):
+    cache = getattr(PDF_overlay_hadler, "cache", None)
+    if cache is None:
+        return
+    for update in depsgraph.updates:
+        if update.is_updated_geometry:
+            cache.pop(update.id.name, None)
+            if hasattr(update.id, "data") and update.id.data:
+                cache.pop(update.id.data.name, None)
+    if not hasattr(PDF_export_app_handler, "last_state"):
+        PDF_export_app_handler.last_state = set()
+    if not hasattr(PDF_export_app_handler, "last_count"):
+        PDF_export_app_handler.last_count = 0
     if not depsgraph.id_type_updated('OBJECT'):
         return
     current_count = len(bpy.data.objects)
     check_needed = False
-    if current_count != depsgraph_refresh_pdf_list.last_count:
+    if current_count != PDF_export_app_handler.last_count:
         check_needed = True
     else:
         for u in depsgraph.updates:
@@ -41,10 +59,10 @@ def depsgraph_refresh_pdf_list(scene, depsgraph):
             o.name for o in bpy.data.objects 
             if o.name.endswith(".pdf")
         }
-        if current_names == depsgraph_refresh_pdf_list.last_state:
+        if current_names == PDF_export_app_handler.last_state:
             return
-        depsgraph_refresh_pdf_list.last_state = current_names
-        depsgraph_refresh_pdf_list.last_count = current_count
+        PDF_export_app_handler.last_state = current_names
+        PDF_export_app_handler.last_count = current_count
         saved = {
             i.name: (i.selected, i.export_frames) 
             for i in settings.pdf_collection
@@ -827,14 +845,16 @@ def register():
         type=PDFExportSettings
     )
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
-    bpy.app.handlers.depsgraph_update_post.append(depsgraph_refresh_pdf_list)
+    bpy.app.handlers.depsgraph_update_post.append(PDF_export_app_handler)
+    bpy.app.handlers.load_post.append(clear_cache_on_load)
 
 def unregister():
+    bpy.app.handlers.load_post.remove(clear_cache_on_load)
     pdf_draw_handler = getattr(bpy.types.WindowManager, "pdf_draw_handler", None)
     if pdf_draw_handler is not None:
         bpy.types.SpaceView3D.draw_handler_remove(pdf_draw_handler, 'WINDOW')
         bpy.types.WindowManager.pdf_draw_handler = None 
-    bpy.app.handlers.depsgraph_update_post.remove(depsgraph_refresh_pdf_list)
+    bpy.app.handlers.depsgraph_update_post.remove(PDF_export_app_handler)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     del bpy.types.Scene.pdf_export_settings
     for cls in reversed(classes):

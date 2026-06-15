@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 id = "export_pdf"
 name = "Export to PDF"
-version = "1.0.0"
+version = "1.0.1"
 tagline = "Export drawings(flat on XY plane) to PDF"
 maintainer = "Martynas Žiemys"
 type = "add-on"

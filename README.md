@@ -21,7 +21,6 @@ Install as any other extension - download [export_pdf-1.0.0.zip](releases/export
     * `pdf_stroke_color` edge color attribute, RGBA
 * Export multiple files with frames as pages
 
-
 ## Usage
 
 PDF page canvas is defined with a simple canvas object(its bounding box) named with ".pdf" at the end. Its original dimensions are used for the page dimensions and scale is used to determine the scale factor. Canvas object can be animated to change size and position per page. Note: world space bounding box in X and Y is used, so it should probably not be rotated. 
@@ -44,7 +43,6 @@ You can export a single selected canvas object if you choose the Export to PDF o
 
 ![A4 PDF_Page.pdf](assets/A4%20PDF_Page.pdf "A4 PDF_Page.pdf")
 
-
 ## Limitations
 
 The add-on is made for making PDF documents in Blender. This, however, does not mean it will export everything and anything that you can have in a Blender scene. While it attempts to deal with simple cases of "messy" geometry, clean geometry flat on XY plane is expected for it to work well. There are also limitations in PDF format that this add-on does not attempt to overcome like complex image or text transformations. Images and text can be rotated in Z axis only to export correctly. Text and image scaling is fine as long as it's not negative.
@@ -58,7 +56,6 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 
 ## TO DO
 
-* Packed font support 
 * Better text properties support
 
 ## Ideas I am considering 

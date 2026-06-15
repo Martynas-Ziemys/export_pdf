@@ -25,12 +25,17 @@ def edge_rect_stroke(p1, p2, width, offset):
 
 
 def PDF_overlay_hadler(context):
-    col_convert = OCIOColorConverter(scene=context.scene)
+    if not hasattr(PDF_overlay_hadler, "cache"):
+        PDF_overlay_hadler.cache = {}
+    if not hasattr(PDF_overlay_hadler, "col_convert_stored"):
+        PDF_overlay_hadler.col_convert_stored = OCIOColorConverter(scene=context.scene)
+    col_convert = PDF_overlay_hadler.col_convert_stored
     depsgraph = context.evaluated_depsgraph_get()
     gpu.state.blend_set('ALPHA')
     gpu.state.depth_test_set('LESS_EQUAL')
     shader_tris = gpu.shader.from_builtin('UNIFORM_COLOR')
     shader_lines = gpu.shader.from_builtin('UNIFORM_COLOR')
+    processed_objects = set()
     for instance in depsgraph.object_instances:
         obj = instance.object
         orig_obj = instance.object.original
@@ -38,67 +43,88 @@ def PDF_overlay_hadler(context):
             continue
         if orig_obj.type == 'CURVE' and obj.type == 'MESH':
             continue
-        if orig_obj.type == 'CURVE':
-            mesh = obj.to_mesh()
-        else:
-            mesh = obj.data
+        if not instance.is_instance:
+            if orig_obj in processed_objects:
+                continue
+            processed_objects.add(orig_obj)
+        cache_key = orig_obj.name if orig_obj.type == 'CURVE' else orig_obj.data.name
         matrix = instance.matrix_world
         stroke_width_prop = orig_obj.get("stroke_width", 0.01)
         stroke_color_prop = orig_obj.get("stroke_color", (0.0, 0.0, 0.0, 1.0))
         stroke_color = col_convert.to_rgba(stroke_color_prop)
         is_edit_mesh = (orig_obj.type == 'MESH' and orig_obj.mode == 'EDIT')
-        if is_edit_mesh:
-            bm = bmesh.from_edit_mesh(orig_obj.data)
-        else:
-            bm = bmesh.new()
-            bm.from_mesh(mesh)
-        pdf_stroke_layer = None
-        pdf_color_layer = None
-        if orig_obj.type == 'MESH':
-            pdf_stroke_layer = bm.edges.layers.float.get("pdf_stroke")
-            pdf_color_layer = bm.edges.layers.float_color.get("pdf_stroke_color")
-        batches = {}
-        line_batches = {}
-        for edge in bm.edges:
-            is_boundary = edge.is_boundary or edge.is_wire
-            has_attr = False
-            width = stroke_width_prop
-            color = stroke_color
-            if pdf_stroke_layer:
-                val = edge[pdf_stroke_layer]
-                if val > 0.0:
-                    has_attr = True
-                    width = val
-            if not has_attr and (not is_boundary or stroke_width_prop <= 0.0):
-                continue
-            if has_attr and pdf_color_layer:
-                color = col_convert.to_rgba(edge[pdf_color_layer])
-            p1 = matrix @ edge.verts[0].co
-            p2 = matrix @ edge.verts[1].co
-            if color not in line_batches:
-                line_batches[color] = []
-            line_batches[color].extend([p1, p2])
-            rect = edge_rect_stroke(p1, p2, width, 0.001)
-            bucket_key = (color, width)
-            if bucket_key not in batches:
-                batches[bucket_key] = []
-            batches[bucket_key].extend(rect)
+        cached_data = None if is_edit_mesh else PDF_overlay_hadler.cache.get(cache_key)
+        if cached_data is None:
+            if is_edit_mesh:
+                bm = bmesh.from_edit_mesh(orig_obj.data)
+            else:
+                bm = bmesh.new()
+                if orig_obj.type == 'CURVE':
+                    temp_mesh = obj.to_mesh()
+                    bm.from_mesh(temp_mesh)
+                    obj.to_mesh_clear()
+                else:
+                    bm.from_mesh(obj.data)
+            pdf_stroke_layer = None
+            pdf_color_layer = None
+            if orig_obj.type == 'MESH':
+                pdf_stroke_layer = bm.edges.layers.float.get("pdf_stroke")
+                pdf_color_layer = bm.edges.layers.float_color.get("pdf_stroke_color")
+            batches = {}
+            line_batches = {}
+            for edge in bm.edges:
+                is_boundary = edge.is_boundary or edge.is_wire
+                has_attr = False
+                width = stroke_width_prop
+                color = stroke_color
+                if pdf_stroke_layer:
+                    val = edge[pdf_stroke_layer]
+                    if val > 0.0:
+                        has_attr = True
+                        width = val
+                if not has_attr and (not is_boundary or stroke_width_prop <= 0.0):
+                    continue
+                if has_attr and pdf_color_layer:
+                    color = col_convert.to_rgba(edge[pdf_color_layer])
+                p1 = edge.verts[0].co.copy()
+                p2 = edge.verts[1].co.copy()
+                if color not in line_batches:
+                    line_batches[color] = []
+                line_batches[color].extend([p1, p2])
+                rect = edge_rect_stroke(p1, p2, width, 0.001)
+                bucket_key = (color, width)
+                if bucket_key not in batches:
+                    batches[bucket_key] = []
+                batches[bucket_key].extend(rect)
+            gpu_tris_batches = []
+            for (color, width), coords in batches.items():
+                indices = []
+                for i in range(0, len(coords), 4):
+                    indices.extend([(i, i+1, i+2), (i+1, i+3, i+2)])
+                batch = batch_for_shader(shader_tris, 'TRIS', {"pos": coords}, indices=indices)
+                gpu_tris_batches.append((batch, color))
+            gpu_lines_batches = []
+            for color, l_coords in line_batches.items():
+                line_batch = batch_for_shader(shader_lines, 'LINES', {"pos": l_coords})
+                gpu_lines_batches.append((line_batch, color))
+            cached_data = {"tris": gpu_tris_batches, "lines": gpu_lines_batches}
+            if not is_edit_mesh:
+                PDF_overlay_hadler.cache[cache_key] = cached_data
         shader_tris.bind()
-        for (color, width), coords in batches.items():
-            indices = []
-            for i in range(0, len(coords), 4):
-                indices.extend([(i, i+1, i+2), (i+1, i+3, i+2)])
-            batch = batch_for_shader(shader_tris, 'TRIS', {"pos": coords}, indices=indices)
+        gpu.matrix.push()
+        gpu.matrix.multiply_matrix(matrix)
+        for batch, color in cached_data["tris"]:
             shader_tris.uniform_float("color", color)
             batch.draw(shader_tris)
+        gpu.matrix.pop()
         gpu.state.line_width_set(1.0)
         shader_lines.bind()
-        for color, l_coords in line_batches.items():
-            line_batch = batch_for_shader(shader_lines, 'LINES', {"pos": l_coords})
+        gpu.matrix.push()
+        gpu.matrix.multiply_matrix(matrix)
+        for line_batch, color in cached_data["lines"]:
             shader_lines.uniform_float("color", color)
             line_batch.draw(shader_lines)
-        if not is_edit_mesh:
-            bm.free()
+        gpu.matrix.pop()
     gpu.state.blend_set('NONE')
     gpu.state.depth_test_set('NONE')
 
