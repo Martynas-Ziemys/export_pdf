@@ -28,7 +28,9 @@ def PDF_overlay_hadler(context):
     if not hasattr(PDF_overlay_hadler, "cache"):
         PDF_overlay_hadler.cache = {}
     if not hasattr(PDF_overlay_hadler, "col_convert_stored"):
-        PDF_overlay_hadler.col_convert_stored = OCIOColorConverter(scene=context.scene)
+        PDF_overlay_hadler.col_convert_stored = OCIOColorConverter(
+            scene=context.scene
+        )
     col_convert = PDF_overlay_hadler.col_convert_stored
     depsgraph = context.evaluated_depsgraph_get()
     gpu.state.blend_set('ALPHA')
@@ -47,29 +49,36 @@ def PDF_overlay_hadler(context):
             if orig_obj in processed_objects:
                 continue
             processed_objects.add(orig_obj)
-        cache_key = orig_obj.name if orig_obj.type == 'CURVE' else orig_obj.data.name
+        cache_key = orig_obj.name
         matrix = instance.matrix_world
         stroke_width_prop = orig_obj.get("stroke_width", 0.01)
         stroke_color_prop = orig_obj.get("stroke_color", (0.0, 0.0, 0.0, 1.0))
         stroke_color = col_convert.to_rgba(stroke_color_prop)
         is_edit_mesh = (orig_obj.type == 'MESH' and orig_obj.mode == 'EDIT')
-        cached_data = None if is_edit_mesh else PDF_overlay_hadler.cache.get(cache_key)
+        cached_data = ( 
+            None if is_edit_mesh else PDF_overlay_hadler.cache.get(cache_key)
+        )
         if cached_data is None:
             if is_edit_mesh:
+                # Arbitrary, but maybe if you edit a mesh that dense,
+                # only object mode overlays are OK 
+                if len(orig_obj.data.polygons) > 300000: 
+                    continue
                 bm = bmesh.from_edit_mesh(orig_obj.data)
             else:
                 bm = bmesh.new()
                 if orig_obj.type == 'CURVE':
                     temp_mesh = obj.to_mesh()
                     bm.from_mesh(temp_mesh)
-                    obj.to_mesh_clear()
                 else:
                     bm.from_mesh(obj.data)
             pdf_stroke_layer = None
             pdf_color_layer = None
             if orig_obj.type == 'MESH':
                 pdf_stroke_layer = bm.edges.layers.float.get("pdf_stroke")
-                pdf_color_layer = bm.edges.layers.float_color.get("pdf_stroke_color")
+                pdf_color_layer = (
+                    bm.edges.layers.float_color.get("pdf_stroke_color")
+                )
             batches = {}
             line_batches = {}
             for edge in bm.edges:
@@ -82,7 +91,7 @@ def PDF_overlay_hadler(context):
                     if val > 0.0:
                         has_attr = True
                         width = val
-                if not has_attr and (not is_boundary or stroke_width_prop <= 0.0):
+                if not has_attr and (not is_boundary or stroke_width_prop == 0):
                     continue
                 if has_attr and pdf_color_layer:
                     color = col_convert.to_rgba(edge[pdf_color_layer])
@@ -101,11 +110,18 @@ def PDF_overlay_hadler(context):
                 indices = []
                 for i in range(0, len(coords), 4):
                     indices.extend([(i, i+1, i+2), (i+1, i+3, i+2)])
-                batch = batch_for_shader(shader_tris, 'TRIS', {"pos": coords}, indices=indices)
+                batch = batch_for_shader(
+                    shader_tris, 
+                    'TRIS', 
+                    {"pos": coords}, 
+                    indices=indices
+                )
                 gpu_tris_batches.append((batch, color))
             gpu_lines_batches = []
             for color, l_coords in line_batches.items():
-                line_batch = batch_for_shader(shader_lines, 'LINES', {"pos": l_coords})
+                line_batch = batch_for_shader(
+                    shader_lines, 'LINES', {"pos": l_coords}
+                )
                 gpu_lines_batches.append((line_batch, color))
             cached_data = {"tris": gpu_tris_batches, "lines": gpu_lines_batches}
             if not is_edit_mesh:

@@ -6,7 +6,7 @@ This is a Blender add-on for creating PDF documents. It lets you construct PDF p
 
 ## Installation
 
-Install as any other extension - download [export_pdf-1.0.0.zip](releases/export_pdf-1.0.0.zip) and drag and drop it on top of Blender window or choose the .zip with Install from Disk from Preferences.
+Install as any other extension - download [export_pdf-1.0.1.zip](releases/export_pdf-1.0.1.zip) and drag and drop it on top of Blender window or choose the .zip with Install from Disk from Preferences.
 
 ## Key Features
 
