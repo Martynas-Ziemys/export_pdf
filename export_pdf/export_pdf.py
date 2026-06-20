@@ -15,54 +15,55 @@ from .writers import *
 
 @bpy.app.handlers.persistent
 def clear_cache_on_load(*args):
-    cache = getattr(PDF_overlay_hadler, "cache", None)
+    cache = getattr(PDF_overlay_handler, "cache", None)
     if cache is not None:
         cache.clear()
     if hasattr(PDF_export_app_handler, "last_state"):
         PDF_export_app_handler.last_state = set()
     if hasattr(PDF_export_app_handler, "last_count"):
-        PDF_export_app_handler.last_count = 0
+        PDF_export_app_handler.last_count = -1
+    
 
 @persistent
 def PDF_export_app_handler(scene, depsgraph):
-    cache = getattr(PDF_overlay_hadler, "cache", None)
-    if cache is None:
-        return
-    for update in depsgraph.updates:
-        if update.is_updated_geometry:
-            cache.pop(update.id.name, None)
-            if hasattr(update.id, "data") and update.id.data:
-                cache.pop(update.id.data.name, None)
+    cache = getattr(PDF_overlay_handler, "cache", None)
+    if cache is not None:
+        for update in depsgraph.updates:
+            if update.is_updated_geometry:
+                cache.pop(update.id.name, None)
+                if hasattr(update.id, "data") and update.id.data:
+                    cache.pop(update.id.data.name, None)
     if not hasattr(PDF_export_app_handler, "last_state"):
         PDF_export_app_handler.last_state = set()
     if not hasattr(PDF_export_app_handler, "last_count"):
-        PDF_export_app_handler.last_count = 0
+        PDF_export_app_handler.last_count = -1
     if not depsgraph.id_type_updated('OBJECT'):
         return
     current_count = len(bpy.data.objects)
-    check_needed = False
-    if current_count != PDF_export_app_handler.last_count:
-        check_needed = True
-    else:
+    check_needed = current_count != PDF_export_app_handler.last_count
+    PDF_export_app_handler.last_count = current_count
+    if not check_needed:
         for u in depsgraph.updates:
             if not isinstance(u.id, bpy.types.Object):
                 continue
-            if (u.is_updated_transform 
-                or u.is_updated_geometry 
-                or u.is_updated_shading):
+            if u.is_updated_transform:
+                continue
+            if u.is_updated_geometry:
+                continue
+            if u.is_updated_shading:
                 continue
             check_needed = True
             break
     if check_needed:
+        print("Check")
         settings = getattr(scene, "pdf_export_settings", None)
+        if not settings:
+            return
         current_names = {
-            o.name for o in bpy.data.objects 
-            if o.name.endswith(".pdf")
-        }
+            o.name for o in bpy.data.objects if o.name.endswith(".pdf")
+            }
         if current_names == PDF_export_app_handler.last_state:
             return
-        PDF_export_app_handler.last_state = current_names
-        PDF_export_app_handler.last_count = current_count
         saved = {
             i.name: (i.selected, i.export_frames) 
             for i in settings.pdf_collection
@@ -73,6 +74,7 @@ def PDF_export_app_handler(scene, depsgraph):
             item.name = name
             if name in saved:
                 item.selected, item.export_frames = saved[name]
+        PDF_export_app_handler.last_state = current_names
 
 class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.pdf"
@@ -560,7 +562,7 @@ class VIEW3D_OT_toggle_pdf_preview(bpy.types.Operator):
     def execute(self, context):
         pdf_draw_handler = getattr(bpy.types.WindowManager, "pdf_draw_handler", None)
         if pdf_draw_handler is None:
-            pdf_draw_handler = bpy.types.SpaceView3D.draw_handler_add(PDF_overlay_hadler, (context,), 'WINDOW', 'POST_VIEW')
+            pdf_draw_handler = bpy.types.SpaceView3D.draw_handler_add(PDF_overlay_handler, (context,), 'WINDOW', 'POST_VIEW')
             bpy.types.WindowManager.pdf_draw_handler = pdf_draw_handler
         else:
             bpy.types.SpaceView3D.draw_handler_remove(pdf_draw_handler, 'WINDOW')
@@ -856,6 +858,5 @@ def unregister():
         bpy.types.WindowManager.pdf_draw_handler = None 
     bpy.app.handlers.depsgraph_update_post.remove(PDF_export_app_handler)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-    del bpy.types.Scene.pdf_export_settings
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
