@@ -260,15 +260,18 @@ class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
                         continue
                     if all(v.z < b_min_z for v in bbox): 
                         continue
-                    parse_instance(
-                        instance, 
-                        bounds, 
-                        col_convert, 
-                        frame_data,
-                        self.text_as_mesh,
-                        self.colormanage_images,
-                        self.linear
-                    )
+                    try:
+                        parse_instance(
+                            instance, 
+                            bounds, 
+                            col_convert, 
+                            frame_data,
+                            self.text_as_mesh,
+                            self.colormanage_images,
+                            self.linear
+                        )
+                    except ParsingError as e:
+                        self.report({'ERROR'}, str(e))
                 frame_data.sort(key=lambda p: p["z_depth"], reverse=False)
                 append_pdf_frame(pdf, frame_data, bounds, render_scale)
             context.scene.frame_set(original_frame)
@@ -560,12 +563,18 @@ class VIEW3D_OT_toggle_pdf_preview(bpy.types.Operator):
     bl_idname = "view3d.toggle_pdf_preview"
     bl_label = "Toggle PDF Stroke Preview"
     def execute(self, context):
-        pdf_draw_handler = getattr(bpy.types.WindowManager, "pdf_draw_handler", None)
+        pdf_draw_handler = getattr(
+            bpy.types.WindowManager, "pdf_draw_handler", None
+        )
         if pdf_draw_handler is None:
-            pdf_draw_handler = bpy.types.SpaceView3D.draw_handler_add(PDF_overlay_handler, (context,), 'WINDOW', 'POST_VIEW')
+            pdf_draw_handler = bpy.types.SpaceView3D.draw_handler_add(
+                PDF_overlay_handler, (context,), 'WINDOW', 'POST_VIEW'
+            )
             bpy.types.WindowManager.pdf_draw_handler = pdf_draw_handler
         else:
-            bpy.types.SpaceView3D.draw_handler_remove(pdf_draw_handler, 'WINDOW')
+            bpy.types.SpaceView3D.draw_handler_remove(
+                pdf_draw_handler, 'WINDOW'
+            )
             bpy.types.WindowManager.pdf_draw_handler = None
         context.area.tag_redraw()
         return {'FINISHED'}
@@ -852,7 +861,9 @@ def register():
 
 def unregister():
     bpy.app.handlers.load_post.remove(clear_cache_on_load)
-    pdf_draw_handler = getattr(bpy.types.WindowManager, "pdf_draw_handler", None)
+    pdf_draw_handler = getattr(
+        bpy.types.WindowManager, "pdf_draw_handler", None
+    )
     if pdf_draw_handler is not None:
         bpy.types.SpaceView3D.draw_handler_remove(pdf_draw_handler, 'WINDOW')
         bpy.types.WindowManager.pdf_draw_handler = None 

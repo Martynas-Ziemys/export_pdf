@@ -7,6 +7,9 @@ import tempfile
 import numpy as np
 from .utils import *
 
+class ParsingError(Exception):
+    pass
+
 def parse_instance(
         instance, 
         bounds, 
@@ -332,7 +335,13 @@ def parse_empty_image(o, bounds, matrix, colormanage_images, linear_only):
         else:
             old_img_format = img.file_format
             img.file_format = tmp_format
-            img.save(filepath=export_filepath)
+            try:
+                img.save(filepath=export_filepath)
+            except:
+                raise ParsingError(
+                    f'"{img.name}" image in {o.name} could not be processed. '
+                    'Missing file?'
+                )
             img.file_format = old_img_format
     if is_exr:
         img = bpy.data.images.load(export_filepath, check_existing=True)

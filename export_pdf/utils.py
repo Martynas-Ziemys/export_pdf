@@ -15,7 +15,7 @@ def edge_rect_stroke(p1, p2, width, offset):
     if normal.length < 0.001:
         normal = dir_vec.cross(Vector((0, 1, 0)))
     normal.normalize()
-    offset_vec = normal * (width / 2.0)
+    offset_vec = normal * (width)
     up_offset = Vector((0, 0, offset))
     v0 = p1 + offset_vec + up_offset
     v1 = p1 - offset_vec + up_offset
@@ -67,7 +67,9 @@ def PDF_overlay_handler(context):
                 bm = bmesh.from_edit_mesh(orig_obj.data)
             else:
                 bm = bmesh.new()
-                if orig_obj.type == 'CURVE':
+                if orig_obj.type == 'CURVE': #are curves drawn twice?
+                    if obj.type == 'MESH': 
+                        continue
                     temp_mesh = obj.to_mesh()
                     bm.from_mesh(temp_mesh)
                 else:

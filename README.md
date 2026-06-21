@@ -6,7 +6,7 @@ This is a Blender add-on for creating PDF documents. It lets you construct PDF p
 
 ## Installation
 
-Install as any other extension - download [export_pdf-1.0.1.zip](releases/export_pdf-1.0.1.zip) and drag and drop it on top of Blender window or choose the .zip with Install from Disk from Preferences.
+Install as any other extension - download [export_pdf-1.0.2.zip](releases/export_pdf-1.0.2.zip) and drag and drop it on top of Blender window or choose the .zip with Install from Disk from Preferences.
 
 ## Key Features
 
@@ -53,6 +53,7 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 * Multiple materials assigned to text characters is not supported(first material will be used)
 * Transparency rendering will not match Blender's viewport.
 * Images can only be rotated in Z axis to render correctly
+* Applying constructive curve modifiers is not supported in Blender so curves that use modifiers like Array will not be exported correctly(that's a limitation in Blender(!)) 
 
 ## TO DO
 
