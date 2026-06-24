@@ -64,6 +64,8 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 * Options for stroke joint types
 * Scene unit support
 * Switching images from Empty to Mesh type so they are color managed in the viewport
+* Fill addition with attributes and/or better support for closed geometry
+* SVG?
 
 ## AI Use 
 
