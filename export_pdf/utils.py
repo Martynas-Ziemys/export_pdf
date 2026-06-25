@@ -15,14 +15,13 @@ def edge_rect_stroke(p1, p2, width, offset):
     if normal.length < 0.001:
         normal = dir_vec.cross(Vector((0, 1, 0)))
     normal.normalize()
-    offset_vec = normal * (width)
+    offset_vec = normal * (width / 2)
     up_offset = Vector((0, 0, offset))
     v0 = p1 + offset_vec + up_offset
     v1 = p1 - offset_vec + up_offset
     v2 = p2 + offset_vec + up_offset
     v3 = p2 - offset_vec + up_offset
     return [v0, v1, v2, v3]
-
 
 def PDF_overlay_handler(context):
     if not hasattr(PDF_overlay_handler, "cache"):
@@ -49,10 +48,16 @@ def PDF_overlay_handler(context):
             if orig_obj in processed_objects:
                 continue
             processed_objects.add(orig_obj)
-        cache_key = orig_obj.name
         matrix = instance.matrix_world
+        scale_factor = matrix.to_scale().x
         stroke_width_prop = orig_obj.get("stroke_width", 0.01)
         stroke_color_prop = orig_obj.get("stroke_color", (0.0, 0.0, 0.0, 1.0))
+        cache_key = (
+            orig_obj.name, 
+            round(scale_factor, 4), 
+            stroke_width_prop, 
+            tuple(stroke_color_prop)
+        )
         stroke_color = col_convert.to_rgba(stroke_color_prop)
         is_edit_mesh = (orig_obj.type == 'MESH' and orig_obj.mode == 'EDIT')
         cached_data = ( 
@@ -60,14 +65,12 @@ def PDF_overlay_handler(context):
         )
         if cached_data is None:
             if is_edit_mesh:
-                # Arbitrary, but maybe if you edit a mesh that dense,
-                # only object mode overlays are OK 
                 if len(orig_obj.data.polygons) > 300000: 
                     continue
                 bm = bmesh.from_edit_mesh(orig_obj.data)
             else:
                 bm = bmesh.new()
-                if orig_obj.type == 'CURVE': #are curves drawn twice?
+                if orig_obj.type == 'CURVE':
                     if obj.type == 'MESH': 
                         continue
                     temp_mesh = obj.to_mesh()
@@ -102,7 +105,8 @@ def PDF_overlay_handler(context):
                 if color not in line_batches:
                     line_batches[color] = []
                 line_batches[color].extend([p1, p2])
-                rect = edge_rect_stroke(p1, p2, width, 0.001)
+                local_width = width / scale_factor if scale_factor != 0 else width
+                rect = edge_rect_stroke(p1, p2, local_width, 0.001)
                 bucket_key = (color, width)
                 if bucket_key not in batches:
                     batches[bucket_key] = []

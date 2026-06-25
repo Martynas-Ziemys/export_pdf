@@ -28,11 +28,16 @@ def clear_cache_on_load(*args):
 def PDF_export_app_handler(scene, depsgraph):
     cache = getattr(PDF_overlay_handler, "cache", None)
     if cache is not None:
-        for update in depsgraph.updates:
-            if update.is_updated_geometry:
-                cache.pop(update.id.name, None)
-                if hasattr(update.id, "data") and update.id.data:
-                    cache.pop(update.id.data.name, None)
+        for u in depsgraph.updates:
+            if not isinstance(u.id, bpy.types.Object):
+                continue
+            if u.is_updated_shading:
+                continue
+            if u.is_updated_transform:
+                continue
+            keys_to_remove = [k for k in cache.keys() if isinstance(k, tuple) and k[0] == u.id.name]
+            for k in keys_to_remove:
+                cache.pop(k, None)
     if not hasattr(PDF_export_app_handler, "last_state"):
         PDF_export_app_handler.last_state = set()
     if not hasattr(PDF_export_app_handler, "last_count"):
