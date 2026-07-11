@@ -58,6 +58,7 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 ## TO DO
 
 * Better text properties support
+* Change option "Convert Text to Mesh" to "Convert Text to Curves" (in case text needs to be huge and smooth)
 
 ## Ideas I am considering 
 
@@ -65,7 +66,7 @@ The add-on is made for making PDF documents in Blender. This, however, does not 
 * Scene unit support
 * Switching images from Empty to Mesh type so they are color managed in the viewport
 * Fill addition with attributes and/or better support for closed geometry
-* SVG?
+* SVG? Look into instancing in output. 
 
 ## AI Use 
 
