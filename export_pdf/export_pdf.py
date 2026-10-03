@@ -13,7 +13,7 @@ from .parsers import *
 from .writers import *
 
 
-@bpy.app.handlers.persistent
+@persistent
 def clear_cache_on_load(*args):
     cache = getattr(PDF_overlay_handler, "cache", None)
     if cache is not None:
@@ -26,60 +26,62 @@ def clear_cache_on_load(*args):
 
 @persistent
 def PDF_export_app_handler(scene, depsgraph):
+    hdlr = PDF_export_app_handler
+    relevant_updates = False
+    for u in depsgraph.updates:
+        id_type = u.id.id_type
+        if not (
+            u.is_updated_transform 
+            or u.is_updated_shading 
+            or u.is_updated_geometry
+        ):
+            if id_type == 'OBJECT':
+                relevant_updates = True
+                break
+            if id_type == 'SCENE':
+                if not hasattr(hdlr, "scene_object_counts"):
+                    hdlr.scene_object_counts = {}
+                current_count = len(scene.objects)
+                if hdlr.scene_object_counts.get(scene) == current_count:
+                    return
+                hdlr.scene_object_counts[scene] = current_count
+                relevant_updates = True
+                break
+    if not relevant_updates:
+        return
+    print("Check")
     cache = getattr(PDF_overlay_handler, "cache", None)
     if cache is not None:
         for u in depsgraph.updates:
-            if not isinstance(u.id, bpy.types.Object):
-                continue
-            if u.is_updated_shading:
-                continue
-            if u.is_updated_transform:
-                continue
             keys_to_remove = [k for k in cache.keys() if isinstance(k, tuple) and k[0] == u.id.name]
             for k in keys_to_remove:
                 cache.pop(k, None)
-    if not hasattr(PDF_export_app_handler, "last_state"):
-        PDF_export_app_handler.last_state = set()
-    if not hasattr(PDF_export_app_handler, "last_count"):
-        PDF_export_app_handler.last_count = -1
-    if not depsgraph.id_type_updated('OBJECT'):
-        return
+    if not hasattr(hdlr, "last_state"):
+        hdlr.last_state = set()
+    if not hasattr(hdlr, "last_count"):
+        hdlr.last_count = -1
     current_count = len(bpy.data.objects)
-    check_needed = current_count != PDF_export_app_handler.last_count
-    PDF_export_app_handler.last_count = current_count
-    if not check_needed:
-        for u in depsgraph.updates:
-            if not isinstance(u.id, bpy.types.Object):
-                continue
-            if u.is_updated_transform:
-                continue
-            if u.is_updated_geometry:
-                continue
-            if u.is_updated_shading:
-                continue
-            check_needed = True
-            break
-    if check_needed:
-        print("Check")
-        settings = getattr(scene, "pdf_export_settings", None)
-        if not settings:
-            return
-        current_names = {
-            o.name for o in bpy.data.objects if o.name.endswith(".pdf")
-            }
-        if current_names == PDF_export_app_handler.last_state:
-            return
-        saved = {
-            i.name: (i.selected, i.export_frames) 
-            for i in settings.pdf_collection
+    check_needed = current_count != hdlr.last_count
+    hdlr.last_count = current_count
+    settings = getattr(scene, "pdf_export_settings", None)
+    if not settings:
+        return
+    current_names = {
+        o.name for o in bpy.data.objects if o.name.endswith(".pdf")
         }
-        settings.pdf_collection.clear()
-        for name in sorted(current_names):
-            item = settings.pdf_collection.add()
-            item.name = name
-            if name in saved:
-                item.selected, item.export_frames = saved[name]
-        PDF_export_app_handler.last_state = current_names
+    if current_names == hdlr.last_state:
+        return
+    saved = {
+        i.name: (i.selected, i.export_frames) 
+        for i in settings.pdf_collection
+    }
+    settings.pdf_collection.clear()
+    for name in sorted(current_names):
+        item = settings.pdf_collection.add()
+        item.name = name
+        if name in saved:
+            item.selected, item.export_frames = saved[name]
+    hdlr.last_state = current_names
 
 class EXPORT_OT_to_pdf(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.pdf"
