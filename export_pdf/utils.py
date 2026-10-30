@@ -24,13 +24,14 @@ def edge_rect_stroke(p1, p2, width, offset):
     return [v0, v1, v2, v3]
 
 def PDF_overlay_handler(context):
-    if not hasattr(PDF_overlay_handler, "cache"):
-        PDF_overlay_handler.cache = {}
-    if not hasattr(PDF_overlay_handler, "col_convert_stored"):
-        PDF_overlay_handler.col_convert_stored = OCIOColorConverter(
+    ov_hadlr = PDF_overlay_handler
+    if not hasattr(ov_hadlr, "cache"):
+        ov_hadlr.cache = {}
+    if not hasattr(ov_hadlr, "col_convert_stored"):
+        ov_hadlr.col_convert_stored = OCIOColorConverter(
             scene=context.scene
         )
-    col_convert = PDF_overlay_handler.col_convert_stored
+    col_convert = ov_hadlr.col_convert_stored
     depsgraph = context.evaluated_depsgraph_get()
     gpu.state.blend_set('ALPHA')
     gpu.state.depth_test_set('LESS_EQUAL')
@@ -54,14 +55,14 @@ def PDF_overlay_handler(context):
         stroke_color_prop = orig_obj.get("stroke_color", (0.0, 0.0, 0.0, 1.0))
         cache_key = (
             orig_obj.name, 
-            round(scale_factor, 4), 
+            round(scale_factor, 5), 
             stroke_width_prop, 
             tuple(stroke_color_prop)
         )
         stroke_color = col_convert.to_rgba(stroke_color_prop)
         is_edit_mesh = (orig_obj.type == 'MESH' and orig_obj.mode == 'EDIT')
         cached_data = ( 
-            None if is_edit_mesh else PDF_overlay_handler.cache.get(cache_key)
+            None if is_edit_mesh else ov_hadlr.cache.get(cache_key)
         )
         if cached_data is None:
             if is_edit_mesh:
@@ -106,7 +107,11 @@ def PDF_overlay_handler(context):
                     line_batches[color] = []
                 line_batches[color].extend([p1, p2])
                 local_width = width / scale_factor if scale_factor != 0 else width
-                rect = edge_rect_stroke(p1, p2, local_width, 0.001)
+                rv3d = context.space_data.region_3d
+                world_loc = matrix.to_translation()
+                view_depth = abs((rv3d.view_matrix @ world_loc).z)
+                dynamic_offset = max(0.00001, view_depth * 0.0002)
+                rect = edge_rect_stroke(p1, p2, local_width, dynamic_offset)
                 bucket_key = (color, width)
                 if bucket_key not in batches:
                     batches[bucket_key] = []
@@ -131,7 +136,7 @@ def PDF_overlay_handler(context):
                 gpu_lines_batches.append((line_batch, color))
             cached_data = {"tris": gpu_tris_batches, "lines": gpu_lines_batches}
             if not is_edit_mesh:
-                PDF_overlay_handler.cache[cache_key] = cached_data
+                ov_hadlr.cache[cache_key] = cached_data
         shader_tris.bind()
         gpu.matrix.push()
         gpu.matrix.multiply_matrix(matrix)
